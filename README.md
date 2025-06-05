@@ -68,7 +68,7 @@ Federated identity to integrate external IdPs.
 
 # Monorepo setup with @aws/pdk and Projen (Project structure)
 
-`/.projenrc.ts        # Projen project definition
+```/.projenrc.ts        # Projen project definition
 /package.json, tsconfig.json, etc (managed by Projen)
 /packages/infra/src/
    main.ts            # CDK App that imports and initializes above stacks
@@ -78,4 +78,4 @@ Federated identity to integrate external IdPs.
    analytics-stack.ts
    identity-stack.ts
    iot-platform-stage.ts # CDK pipeline "main" stage
-`
+```
