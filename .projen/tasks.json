@@ -52,6 +52,16 @@
         }
       ]
     },
+    "create-adr": {
+      "name": "create-adr",
+      "description": "Create a new ADR with the next number in sequence",
+      "steps": [
+        {
+          "exec": "ts-node ./projenrc/create-adr.ts",
+          "receiveArgs": true
+        }
+      ]
+    },
     "default": {
       "name": "default",
       "description": "Synthesize project files",
@@ -76,9 +86,6 @@
     "eslint": {
       "name": "eslint",
       "description": "Runs eslint against the codebase for all affected projects",
-      "env": {
-        "ESLINT_USE_FLAT_CONFIG": "false"
-      },
       "steps": [
         {
           "exec": "npx nx run-many --target=eslint --output-style=stream --nx-bail",
@@ -180,13 +187,13 @@
       },
       "steps": [
         {
-          "exec": "npx npm-check-updates@16 --upgrade --target=minor --peer --no-deprecated --dep=dev,peer,prod,optional --filter=@aws/pdk,@types/node,eslint-config-prettier,eslint-import-resolver-typescript,eslint-plugin-import,eslint-plugin-prettier,npm-check-updates,prettier,ts-node,typescript,aws-cdk-lib,cdk-nag"
+          "exec": "npx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@aws/pdk,eslint-config-prettier,eslint-import-resolver-typescript,eslint-plugin-import,eslint-plugin-prettier,madr,npm-check-updates,prettier,ts-node,typescript,aws-cdk-lib,cdk-nag"
         },
         {
           "exec": "npm install"
         },
         {
-          "exec": "npm update @aws/pdk @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser constructs eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint npm-check-updates nx prettier projen syncpack ts-node typescript @aws-cdk/aws-cognito-identitypool-alpha aws-cdk-lib cdk-nag"
+          "exec": "npm update @aws/pdk @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser constructs eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint madr npm-check-updates nx prettier projen syncpack ts-node typescript @aws-cdk/aws-cognito-identitypool-alpha aws-cdk-lib cdk-nag"
         },
         {
           "exec": "npx projen"
