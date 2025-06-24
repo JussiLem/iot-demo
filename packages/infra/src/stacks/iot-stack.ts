@@ -1,5 +1,6 @@
 import { Stack, StackProps, aws_iot as iot } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { DeviceTaggerConstruct } from "../constructs";
 
 /**
  * Represents an IoTStack that sets up AWS IoT resources, including policies and rules,
@@ -8,6 +9,7 @@ import { Construct } from "constructs";
  * This stack configures the following:
  * - An IoT Policy to allow devices to publish/subscribe to topics within their tenant-specific namespace.
  * - An IoT Rule to forward device data from MQTT topics to a specified Kinesis Data Stream for processing.
+ * - Cost tracking for IoT devices with multi-tenant support.
  *
  * The stack enables scalable IoT data management by integrating with AWS IoT Core and provides
  * a foundation for robust IoT solutions and data analysis pipelines.
@@ -41,6 +43,12 @@ export class IoTStack extends Stack {
       },
     });
 
+    // Create the device tagger construct
+    new DeviceTaggerConstruct(this, "DeviceTagger", {
+      accountId: this.account,
+      region: this.region,
+    });
+
     // IoT Rule to forward device data from MQTT to Kinesis Data Stream
     new iot.CfnTopicRule(this, "IoTToKinesisRule", {
       ruleName: "IoTDataToKinesis",
@@ -58,9 +66,13 @@ export class IoTStack extends Stack {
               streamName: "<IoTDataStreamName>", // Name of the Kinesis Data Stream (from StreamingStack)
             },
           },
+          // Removed Lambda action to prevent excessive invocations
+          // Now using EventBridge rule to trigger the function only on device registry changes
         ],
       },
     });
+
+    // The device tagger construct handles all the permissions and event rules
 
     // (Optional) IoT provisioning resources (certificates, thing types, etc.) could be defined here or handled out-of-band.
   }

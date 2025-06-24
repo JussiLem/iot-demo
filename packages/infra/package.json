@@ -42,7 +42,13 @@
   },
   "dependencies": {
     "@aws-cdk/aws-kinesisanalytics-flink-alpha": "^2.200.1-alpha.0",
+    "@aws-lambda-powertools/logger": "^2.22.0",
+    "@aws-sdk/client-cloudwatch": "^3.835.0",
+    "@aws-sdk/client-cost-explorer": "^3.835.0",
+    "@aws-sdk/client-eventbridge": "^3.835.0",
+    "@aws-sdk/client-iot": "^3.835.0",
     "@aws/pdk": "^0.26.11",
+    "@types/aws-lambda": "^8.10.150",
     "aws-cdk-lib": "^2.1.0",
     "cdk-nag": "^2.36.10",
     "constructs": "^10.0.5"

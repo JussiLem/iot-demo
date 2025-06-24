@@ -12,6 +12,9 @@ and has a roadmap of enhancements to evolve the architecture in terms of scalabi
 1. [persona-driven analytics](docs/decisions/0001-persona-driven-analytics.md)
 2. [stream lakehouse analytics pipeline](docs/decisions/0002-stream-lakehouse-analytics-pipeline.md)
 3. [multi-region-iot-deployment](docs/decisions/0003-multi-region-iot-deployment.md)
+4. [iot-platform](docs/decisions/0004-iot-platform.md)
+5. [cost-monitoring](docs/decisions/0005-cost-monitoring.md)
+6. [event-driven-device-tagging](docs/decisions/0006-event-driven-device-tagging.md)
 
 # Architecture
 
@@ -51,6 +54,7 @@ Handles device onboarding and data ingestion from building IoT sensors and devic
 Avoids any on-premise or edge software.
 Devices communicate directly to the cloud.
 Tenant isolation and granularity start here: Enforce the devices to publish on MQTT topics scoped by tenant and device.
+Implements automatic tagging of IoT devices for cost tracking and allocation.
 
 ## Streaming Stack - Real-Time Data Processing
 
@@ -66,6 +70,22 @@ Handles identity, authentication, and multi-tenancy aspects.
 Enforce that users only see their own data.
 Federated identity to integrate external IdPs.
 
+## Cost Monitoring Stack - Cost Tracking & Optimization
+
+### Purpose
+Implements "cost per IoT device" metrics and multi-tenant cost allocation.
+Treats cost as a first-class concern in the architecture alongside security and performance.
+Features include:
+- Device-level cost tracking using resource tagging
+- Multi-tenant cost allocation
+- CloudWatch dashboards for cost visualization
+- Budget alerts for cost control
+- Automated cost analysis using AWS Cost Explorer
+
+The cost monitoring solution enables the platform to scale down as efficiently as it scales up,
+preventing unchecked growth of resources and associated costs.
+See [cost-monitoring ADR](docs/decisions/0005-cost-monitoring.md) for detailed design decisions.
+
 # Monorepo setup with @aws/pdk and Projen (Project structure)
 
 ```/.projenrc.ts        # Projen project definition
@@ -77,5 +97,6 @@ Federated identity to integrate external IdPs.
    streaming-stack.ts
    analytics-stack.ts
    identity-stack.ts
+   cost-monitoring-stack.ts
    iot-platform-stage.ts # CDK pipeline "main" stage
 ```

@@ -125,6 +125,20 @@
   "overrides": [
     {
       "files": [
+        "packages/**/*.ts"
+      ],
+      "rules": {
+        "functional/no-expression-statement": "off",
+        "functional/no-conditional-statement": "off",
+        "functional/no-try-statement": "off",
+        "functional/no-return-void": "off",
+        "functional/no-this-expression": "off",
+        "functional/no-class": "off",
+        "functional/no-let": "error"
+      }
+    },
+    {
+      "files": [
         ".projenrc.ts"
       ],
       "rules": {

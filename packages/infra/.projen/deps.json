@@ -79,7 +79,31 @@
       "type": "runtime"
     },
     {
+      "name": "@aws-lambda-powertools/logger",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-cloudwatch",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-cost-explorer",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-eventbridge",
+      "type": "runtime"
+    },
+    {
+      "name": "@aws-sdk/client-iot",
+      "type": "runtime"
+    },
+    {
       "name": "@aws/pdk",
+      "type": "runtime"
+    },
+    {
+      "name": "@types/aws-lambda",
       "type": "runtime"
     },
     {

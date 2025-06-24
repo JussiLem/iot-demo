@@ -187,13 +187,13 @@
       },
       "steps": [
         {
-          "exec": "npx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@aws/pdk,eslint-config-prettier,eslint-import-resolver-typescript,eslint-plugin-import,eslint-plugin-prettier,madr,npm-check-updates,prettier,ts-node,typescript,aws-cdk-lib,cdk-nag"
+          "exec": "npx npm-check-updates@16 --upgrade --target=minor --peer --dep=dev,peer,prod,optional --filter=@aws/pdk,eslint-config-prettier,eslint-import-resolver-typescript,eslint-plugin-functional,eslint-plugin-import,eslint-plugin-prettier,madr,npm-check-updates,prettier,ts-node,typescript,aws-cdk-lib,cdk-nag"
         },
         {
           "exec": "npm install"
         },
         {
-          "exec": "npm update @aws/pdk @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser constructs eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint madr npm-check-updates nx prettier projen syncpack ts-node typescript @aws-cdk/aws-cognito-identitypool-alpha aws-cdk-lib cdk-nag"
+          "exec": "npm update @aws/pdk @types/node @typescript-eslint/eslint-plugin @typescript-eslint/parser constructs eslint-config-prettier eslint-import-resolver-typescript eslint-plugin-functional eslint-plugin-import eslint-plugin-prettier eslint madr npm-check-updates nx prettier projen syncpack ts-node typescript @aws-cdk/aws-cognito-identitypool-alpha aws-cdk-lib cdk-nag"
         },
         {
           "exec": "npx projen"
