@@ -7,47 +7,83 @@ import {
   aws_kinesisfirehose as firehose,
   aws_s3 as s3,
   aws_iam as iam,
+  aws_ssm as ssm,
   RemovalPolicy,
+  CfnOutput,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
 export class StreamingStack extends Stack {
+  /**
+   * The Kinesis data stream for IoT device data
+   */
+  public readonly iotDataStream: kinesis.Stream;
+
+  /**
+   * The S3 bucket for raw data storage
+   */
+  public readonly rawDataBucket: s3.Bucket;
+
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
+    // Get environment name and region from stack name or use defaults
+    const stackNameParts = this.stackName.split("-");
+    const envName = stackNameParts.length > 0 ? stackNameParts[0] : "dev";
+    const region = this.region;
+
+    // Create unique resource names with environment and region to avoid conflicts
+    const resourcePrefix = `${envName}-${region}`;
+
     // S3 bucket for raw data (data lake storage, with Firehose writing into it)
-    const rawDataBucket = new s3.Bucket(this, "RawDataBucket", {
-      bucketName: "iot-raw-data-bucket", // Name as needed
+    this.rawDataBucket = new s3.Bucket(this, "RawDataBucket", {
+      bucketName: `${resourcePrefix}-iot-raw-data-bucket`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy:
-        RemovalPolicy.DESTROY /* cdk.RemovalPolicy.DESTROY in dev, RETAIN in prod */,
+        envName === "prod" ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
       encryption: s3.BucketEncryption.S3_MANAGED,
     });
 
     // Kinesis Data Stream for ingesting IoT messages
-    const dataStream = new kinesis.Stream(this, "IoTDataStream", {
-      streamName: "IoTDeviceDataStream",
-      shardCount: 1,
+    this.iotDataStream = new kinesis.Stream(this, "IoTDataStream", {
+      streamName: `${resourcePrefix}-iot-device-data-stream`,
+      shardCount: envName === "prod" ? 2 : 1, // More shards for production
+    });
+
+    // Store the stream name in SSM Parameter Store for cross-stack reference
+    new ssm.StringParameter(this, "IoTDataStreamNameParam", {
+      parameterName: `/iot-platform/${this.stackName}/kinesis-stream-name`,
+      description: "Name of the Kinesis Data Stream for IoT data",
+      stringValue: this.iotDataStream.streamName,
+    });
+
+    // Output the stream name for reference
+    new CfnOutput(this, "IoTDataStreamName", {
+      value: this.iotDataStream.streamName,
+      description: "Name of the Kinesis Data Stream for IoT data",
+      exportName: `${resourcePrefix}-iot-data-stream-name`,
     });
 
     // IAM role that Firehose will assume to write to S3 (and optionally read from Kinesis)
     const firehoseRole = new iam.Role(this, "FirehoseRole", {
       assumedBy: new iam.ServicePrincipal("firehose.amazonaws.com"),
+      roleName: `${resourcePrefix}-firehose-delivery-role`,
     });
+
     // Grant necessary permissions to the role
-    rawDataBucket.grantWrite(firehoseRole); // allow Firehose to put objects in the bucket
-    dataStream.grantRead(firehoseRole); // if Firehose pulls from Kinesis, allow it to read
+    this.rawDataBucket.grantWrite(firehoseRole); // allow Firehose to put objects in the bucket
+    this.iotDataStream.grantRead(firehoseRole); // if Firehose pulls from Kinesis, allow it to read
 
     // Kinesis Data Firehose to deliver stream data to S3
     new firehose.CfnDeliveryStream(this, "KinesisToS3", {
-      deliveryStreamName: "IoTDataToS3",
+      deliveryStreamName: `${resourcePrefix}-iot-data-to-s3`,
       deliveryStreamType: "KinesisStreamAsSource",
       kinesisStreamSourceConfiguration: {
-        kinesisStreamArn: dataStream.streamArn,
+        kinesisStreamArn: this.iotDataStream.streamArn,
         roleArn: firehoseRole.roleArn,
       },
       extendedS3DestinationConfiguration: {
-        bucketArn: rawDataBucket.bucketArn,
+        bucketArn: this.rawDataBucket.bucketArn,
         prefix: "raw/{timestamp}/", // organize data by date/hour prefix
         errorOutputPrefix: "errors/",
         bufferingHints: { intervalInSeconds: 60, sizeInMBs: 5 }, // buffer data before write

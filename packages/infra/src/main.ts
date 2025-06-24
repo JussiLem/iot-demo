@@ -10,35 +10,54 @@ import { CICDPipelineStack } from "./stacks/cicd-pipeline-stack";
     nagPacks: [new AwsPrototypingChecks()],
   });
 
-  // Use this to deploy your own sandbox environment (assumes your CLI credentials)
-  new CICDPipelineStack(app, "infra-dev-sandbox", {
+  // Define the AWS account ID for deployment
+  const accountId = process.env.CDK_DEFAULT_ACCOUNT;
+
+  // Define the primary and DR regions for multi-region deployment
+  const primaryRegion = "eu-west-1";
+  const drRegions = ["eu-central-1", "eu-west-2"];
+
+  // Define the environments for deployment (dev, test, prod)
+  const environments = ["dev", "prod"];
+
+  // Create the CI/CD pipeline stack
+  new CICDPipelineStack(app, "iot-platform-cicd", {
     env: {
-      account: "123456789012",
-      region: "eu-west-1",
+      account: accountId,
+      region: primaryRegion, // Pipeline is deployed in the primary region
     },
+    // Configure multi-region deployment
+    deploymentRegions: [primaryRegion, ...drRegions],
+    // Configure multi-environment deployment
+    deploymentEnvironments: environments,
+    // GitHub repository configuration
+    repository: "JussiLem/iot-demo",
+    branch: "main",
+    githubTokenSecretName: "GITHUB_TOKEN",
   });
 
+  // Generate architecture diagrams using CDK Graph
   const graph = new CdkGraph(app, {
     plugins: [
       new CdkGraphDiagramPlugin({
         diagrams: [
           {
-            name: "diagram-1",
-            title: "Diagram 1 (dark + compact)",
+            name: "iot-platform-overview",
+            title: "IoT Platform Architecture Overview",
             theme: "dark",
             // the default `filterPlan: { preset: FilterPreset.COMPACT }` will still apply
           },
           {
-            name: "diagram-2",
-            title: "Diagram 2 (dark + verbose)",
+            name: "iot-platform-detailed",
+            title: "IoT Platform Detailed Architecture",
             theme: "dark",
             filterPlan: {
               preset: FilterPreset.NONE,
             },
           },
           {
-            name: "diagram-3",
-            title: "Diagram 3 (no defaults)",
+            name: "iot-platform-dr",
+            title: "IoT Platform Disaster Recovery Architecture",
             ignoreDefaults: true, // default options will not be applied (theme, filterPlan, etc)
           },
         ],

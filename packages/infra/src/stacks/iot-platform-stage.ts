@@ -4,15 +4,127 @@ import { CostMonitoringStack } from "./cost-monitoring-stack";
 import { DataAnalyticsStack } from "./data-analytics-stack";
 import { IdentityStack } from "./identity-stack";
 import { IoTStack } from "./iot-stack";
+import { NetworkStack } from "./network-stack";
 import { StreamingStack } from "./streaming-stack";
 
+/**
+ * Properties for the IotPlatformStage
+ */
+export interface IotPlatformStageProps extends StageProps {
+  /**
+   * The environment name (e.g., dev, test, prod)
+   * @default "dev"
+   */
+  readonly environmentName?: string;
+  readonly tags: {
+    Environment: string;
+    Region: string;
+  };
+}
+
+/**
+ * A stage that represents the complete IoT platform
+ *
+ * This stage follows Domain-Driven Design principles by organizing stacks
+ * according to their bounded contexts:
+ * - IoTStack: Core IoT device management and messaging
+ * - StreamingStack: Real-time data streaming and processing
+ * - DataAnalyticsStack: Data analysis and insights
+ * - IdentityStack: User and device identity management
+ * - CostMonitoringStack: Cost tracking and optimization
+ *
+ * Each stack represents a separate domain with clear boundaries and responsibilities.
+ * This design enables independent deployment and scaling of each domain.
+ */
 export class IotPlatformStage extends Stage {
-  constructor(scope: Construct, id: string, props: StageProps) {
+  /**
+   * Reference to the IoT stack
+   */
+  public readonly iotStack: IoTStack;
+
+  /**
+   * Reference to the streaming stack
+   */
+  public readonly streamingStack: StreamingStack;
+
+  /**
+   * Reference to the data analytics stack
+   */
+  public readonly dataAnalyticsStack: DataAnalyticsStack;
+
+  /**
+   * Reference to the identity stack
+   */
+  public readonly identityStack: IdentityStack;
+
+  /**
+   * Reference to the cost monitoring stack
+   */
+  public readonly costMonitoringStack: CostMonitoringStack;
+
+  /**
+   * Reference to the network stack for DR capabilities
+   */
+  public readonly networkStack: NetworkStack;
+
+  constructor(scope: Construct, id: string, props: IotPlatformStageProps) {
     super(scope, id, props);
-    new IoTStack(this, "IotStack", props);
-    new DataAnalyticsStack(this, "DataAnalyticsStack", props);
-    new StreamingStack(this, "StreamingStack", props);
-    new IdentityStack(this, "SaasIdentityStack", props);
-    new CostMonitoringStack(this, "CostMonitoringStack", props);
+
+    // Get environment name from props or default to "dev"
+    const envName =
+      props.environmentName || (props.tags && props.tags.Environment) || "dev";
+
+    // Get region from props or use the current region
+    const region = props.env?.region || process.env.CDK_DEFAULT_REGION;
+
+    // Create a unique prefix for resource names to avoid conflicts in multi-region deployments
+    const resourcePrefix = `${envName}-${region}`;
+
+    // Determine if this is the primary region for DR configuration
+    const primaryRegion = process.env.PRIMARY_REGION || "eu-west-1";
+    const isPrimaryRegion = region === primaryRegion;
+
+    // Create the network stack with DR capabilities first
+    // This ensures the Route53 hosted zone is created before other stacks that need it
+    this.networkStack = new NetworkStack(this, "NetworkStack", {
+      ...props,
+      stackName: `${resourcePrefix}-network-stack`,
+      isPrimaryRegion: isPrimaryRegion,
+      domainName: `iot-${envName}.example.com`, // Customize as needed
+    });
+
+    // Create stacks with proper dependencies and cross-references
+    this.iotStack = new IoTStack(this, "IotStack", {
+      ...props,
+      stackName: `${resourcePrefix}-iot-stack`,
+    });
+
+    this.dataAnalyticsStack = new DataAnalyticsStack(
+      this,
+      "DataAnalyticsStack",
+      {
+        ...props,
+        stackName: `${resourcePrefix}-data-analytics-stack`,
+      },
+    );
+
+    this.streamingStack = new StreamingStack(this, "StreamingStack", {
+      ...props,
+      stackName: `${resourcePrefix}-streaming-stack`,
+    });
+
+    this.identityStack = new IdentityStack(this, "SaasIdentityStack", {
+      ...props,
+      stackName: `${resourcePrefix}-identity-stack`,
+    });
+
+    this.costMonitoringStack = new CostMonitoringStack(
+      this,
+      "CostMonitoringStack",
+      {
+        ...props,
+        stackName: `${resourcePrefix}-cost-monitoring-stack`,
+      },
+    );
   }
 }

@@ -1,4 +1,13 @@
-import { Stack, StackProps, aws_iot as iot } from "aws-cdk-lib";
+import {
+  Stack,
+  StackProps,
+  aws_iot as iot,
+  aws_iam as iam,
+  aws_ssm as ssm,
+  aws_route53 as route53,
+  CfnOutput,
+  Duration,
+} from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { DeviceTaggerConstruct } from "../constructs";
 
@@ -22,8 +31,27 @@ import { DeviceTaggerConstruct } from "../constructs";
  * @param {StackProps} [props] - Configuration and properties for the stack.
  */
 export class IoTStack extends Stack {
+  /**
+   * The custom IoT Core endpoint domain name
+   */
+  public readonly iotCustomEndpointDomainName: string;
+
+  /**
+   * The Route53 hosted zone for IoT Core endpoints
+   */
+  public readonly iotHostedZone: route53.IHostedZone;
+
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+
+    // Extract environment name and region from stack name
+    const stackNameParts = this.stackName.split("-");
+    const envName = stackNameParts.length > 0 ? stackNameParts[0] : "dev";
+    const region = this.region;
+
+    // Determine if this is the primary region (for failover configuration)
+    const isPrimaryRegion =
+      region === (process.env.PRIMARY_REGION || "eu-west-1");
     // IoT Policy allowing devices to publish/subscribe to their own topics
     new iot.CfnPolicy(this, "DevicePolicy", {
       policyName: "IoTDevicePolicy",
@@ -49,9 +77,27 @@ export class IoTStack extends Stack {
       region: this.region,
     });
 
+    // Create IAM role for IoT to write to Kinesis
+    const iotToKinesisRole = new iam.Role(this, "IoTToKinesisRole", {
+      assumedBy: new iam.ServicePrincipal("iot.amazonaws.com"),
+      description: "Role for IoT rules to write to Kinesis Data Stream",
+    });
+
+    // Get the Kinesis stream name from SSM Parameter Store or use a default value
+    // This allows for cross-stack references in a multi-region deployment
+    const streamNameParam = new ssm.StringParameter(
+      this,
+      "IoTDataStreamNameParam",
+      {
+        parameterName: `/iot-platform/${this.stackName}/kinesis-stream-name`,
+        description: "Name of the Kinesis Data Stream for IoT data",
+        stringValue: "IoTDeviceDataStream", // Default value, will be overridden if parameter exists
+      },
+    );
+
     // IoT Rule to forward device data from MQTT to Kinesis Data Stream
     new iot.CfnTopicRule(this, "IoTToKinesisRule", {
-      ruleName: "IoTDataToKinesis",
+      ruleName: `IoTDataToKinesis-${this.region}`, // Make rule name unique per region
       topicRulePayload: {
         description:
           "Forward IoT messages to Kinesis Data Stream for processing",
@@ -62,8 +108,8 @@ export class IoTStack extends Stack {
           {
             // Kinesis action: put record into stream
             kinesis: {
-              roleArn: "<IoTRoleForKinesisARN>", // IAM role that IoT will assume to write to Kinesis
-              streamName: "<IoTDataStreamName>", // Name of the Kinesis Data Stream (from StreamingStack)
+              roleArn: iotToKinesisRole.roleArn, // Use the role created above
+              streamName: streamNameParam.stringValue, // Use the stream name from parameter store
             },
           },
           // Removed Lambda action to prevent excessive invocations
@@ -75,5 +121,88 @@ export class IoTStack extends Stack {
     // The device tagger construct handles all the permissions and event rules
 
     // (Optional) IoT provisioning resources (certificates, thing types, etc.) could be defined here or handled out-of-band.
+
+    // Create a domain name for IoT Core custom endpoint
+    const domainName = `iot-${envName}.example.com`;
+
+    // Import the Route53 hosted zone from NetworkStack via SSM Parameter Store
+    const hostedZoneIdParam = ssm.StringParameter.fromStringParameterAttributes(
+      this,
+      "ImportedHostedZoneIdParam",
+      {
+        parameterName: `/iot-platform/${envName}/route53-hosted-zone-id`,
+      },
+    );
+
+    this.iotHostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      this,
+      "ImportedHostedZone",
+      {
+        zoneName: domainName,
+        hostedZoneId: hostedZoneIdParam.stringValue,
+      },
+    );
+
+    // Create a custom domain configuration for IoT Core
+    const customDomainConfig = new iot.CfnDomainConfiguration(
+      this,
+      "IoTCustomDomain",
+      {
+        domainName: domainName,
+        domainConfigurationName: `${envName}-${region}-config`,
+        serverCertificateArns: [
+          // You would need to create or import a certificate for the domain
+          // For simplicity, we're using a placeholder ARN
+          `arn:aws:acm:${region}:${this.account}:certificate/example-certificate`,
+        ],
+        serviceType: "DATA",
+      },
+    );
+
+    // Store the IoT Core endpoint in a variable for reference
+    this.iotCustomEndpointDomainName = customDomainConfig.domainName!;
+
+    // Store the custom endpoint domain name in SSM Parameter Store for cross-stack reference
+    new ssm.StringParameter(this, "IoTCustomEndpointParam", {
+      parameterName: `/iot-platform/${envName}/${region}/iot-custom-endpoint`,
+      description: "Custom domain name for the IoT Core endpoint",
+      stringValue: this.iotCustomEndpointDomainName,
+    });
+
+    // Create a health check for the IoT Core endpoint
+    const healthCheck = new route53.HealthCheck(
+      this,
+      "IoTEndpointHealthCheck",
+      {
+        type: route53.HealthCheckType.HTTPS,
+        fqdn: this.iotCustomEndpointDomainName,
+        port: 443,
+        resourcePath: "/",
+        requestInterval: Duration.seconds(30),
+        failureThreshold: 3,
+      },
+    );
+
+    // Create a Route53 record with failover routing policy
+    new route53.CfnRecordSet(this, "IoTEndpointRecord", {
+      name: domainName,
+      type: "A",
+      aliasTarget: {
+        dnsName: this.iotCustomEndpointDomainName,
+        hostedZoneId: this.iotHostedZone.hostedZoneId,
+        evaluateTargetHealth: true,
+      },
+      failover: isPrimaryRegion ? "PRIMARY" : "SECONDARY",
+      healthCheckId: healthCheck.healthCheckId,
+      hostedZoneId: this.iotHostedZone.hostedZoneId,
+      setIdentifier: `${envName}-${region}-endpoint`,
+    });
+
+    // Output the custom endpoint domain name for reference
+    new CfnOutput(this, "IoTCustomEndpointDomainName", {
+      value: this.iotCustomEndpointDomainName,
+      description: "The custom domain name for the IoT Core endpoint",
+      exportName: `${envName}-${region}-iot-endpoint`,
+    });
   }
 }
