@@ -30,17 +30,19 @@ The implementation follows these principles:
 
 3. **Single Entry Point**: Devices connect to a single domain name that resolves to the appropriate IoT Core endpoint based on availability.
 
-4. **Cross-Region Resource Sharing**: The Route53 hosted zone is created in the primary region and referenced in secondary regions using SSM Parameter Store.
+4. **Cross-Region Resource Sharing**: The Route53 hosted zone is created in the primary region and directly referenced in secondary regions using `HostedZone.fromLookup`.
 
 ### Code Structure
 
 The DR capabilities are implemented in the following components:
 
-1. **NetworkStack**: A new stack that manages Route53 resources, IoT Core custom endpoints, health checks, and failover routing.
+1. **HostedZoneStack**: A stack that creates the Route53 hosted zone for IoT Core endpoints. This stack is deployed once in the primary region for each environment.
 
-2. **IotPlatformStage**: Updated to include the NetworkStack and configure it for primary or secondary region behavior.
+2. **IoTStack**: Directly uses `HostedZone.fromLookup` to reference the hosted zone and creates IoT Core custom endpoints, health checks, and Route53 records with failover routing policy.
 
-3. **CICDPipelineStack**: Already configured for multi-region deployment using waves, ensuring coordinated deployment across regions.
+3. **IotPlatformStage**: Manages the deployment of IoTStack and other stacks in each region.
+
+4. **CICDPipelineStack**: Already configured for multi-region deployment using waves, ensuring coordinated deployment across regions.
 
 ## Consequences
 
@@ -67,4 +69,4 @@ The DR capabilities are implemented in the following components:
 - The primary region is determined by the `PRIMARY_REGION` environment variable or defaults to `eu-west-1`.
 - The domain name for IoT Core custom endpoints follows the pattern `iot-{environment}.example.com`.
 - Health checks are configured to check HTTPS connectivity to the IoT Core endpoints.
-- The Route53 hosted zone is created only in the primary region and referenced in secondary regions.
+- The Route53 hosted zone is created only in the primary region by the HostedZoneStack and directly referenced in all regions using `HostedZone.fromLookup`.

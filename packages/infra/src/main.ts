@@ -3,6 +3,7 @@ import { CdkGraphDiagramPlugin } from "@aws/pdk/cdk-graph-plugin-diagram";
 import { CdkGraphThreatComposerPlugin } from "@aws/pdk/cdk-graph-plugin-threat-composer";
 import { AwsPrototypingChecks, PDKNag } from "@aws/pdk/pdk-nag";
 import { CICDPipelineStack } from "./stacks/cicd-pipeline-stack";
+import { HostedZoneStack } from "./stacks/hosted-zone-stack";
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 (async () => {
@@ -19,6 +20,20 @@ import { CICDPipelineStack } from "./stacks/cicd-pipeline-stack";
 
   // Define the environments for deployment (dev, test, prod)
   const environments = ["dev", "prod"];
+
+  // Create the hosted zone stack first
+  // This stack creates the Route53 hosted zone that will be used by the NetworkStack
+  // It only needs to be deployed once, before the CICDPipelineStack
+  environments.forEach((env) => {
+    new HostedZoneStack(app, `${env}-hosted-zone-stack`, {
+      env: {
+        account: accountId,
+        region: primaryRegion, // Hosted zone is created in the primary region
+      },
+      stackName: `${env}-hosted-zone-stack`,
+      domainName: `iot-${env}.example.com`,
+    });
+  });
 
   // Create the CI/CD pipeline stack
   new CICDPipelineStack(app, "iot-platform-cicd", {

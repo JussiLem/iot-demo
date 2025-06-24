@@ -125,23 +125,11 @@ export class IoTStack extends Stack {
     // Create a domain name for IoT Core custom endpoint
     const domainName = `iot-${envName}.example.com`;
 
-    // Import the Route53 hosted zone from NetworkStack via SSM Parameter Store
-    const hostedZoneIdParam = ssm.StringParameter.fromStringParameterAttributes(
-      this,
-      "ImportedHostedZoneIdParam",
-      {
-        parameterName: `/iot-platform/${envName}/route53-hosted-zone-id`,
-      },
-    );
-
-    this.iotHostedZone = route53.HostedZone.fromHostedZoneAttributes(
-      this,
-      "ImportedHostedZone",
-      {
-        zoneName: domainName,
-        hostedZoneId: hostedZoneIdParam.stringValue,
-      },
-    );
+    // Look up the hosted zone by domain name
+    // This works consistently across all regions without needing to know if we're in the primary or secondary region
+    this.iotHostedZone = route53.HostedZone.fromLookup(this, "IoTHostedZone", {
+      domainName: domainName,
+    });
 
     // Create a custom domain configuration for IoT Core
     const customDomainConfig = new iot.CfnDomainConfiguration(

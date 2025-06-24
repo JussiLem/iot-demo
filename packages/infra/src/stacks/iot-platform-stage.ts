@@ -4,7 +4,6 @@ import { CostMonitoringStack } from "./cost-monitoring-stack";
 import { DataAnalyticsStack } from "./data-analytics-stack";
 import { IdentityStack } from "./identity-stack";
 import { IoTStack } from "./iot-stack";
-import { NetworkStack } from "./network-stack";
 import { StreamingStack } from "./streaming-stack";
 
 /**
@@ -62,11 +61,6 @@ export class IotPlatformStage extends Stage {
    */
   public readonly costMonitoringStack: CostMonitoringStack;
 
-  /**
-   * Reference to the network stack for DR capabilities
-   */
-  public readonly networkStack: NetworkStack;
-
   constructor(scope: Construct, id: string, props: IotPlatformStageProps) {
     super(scope, id, props);
 
@@ -79,19 +73,6 @@ export class IotPlatformStage extends Stage {
 
     // Create a unique prefix for resource names to avoid conflicts in multi-region deployments
     const resourcePrefix = `${envName}-${region}`;
-
-    // Determine if this is the primary region for DR configuration
-    const primaryRegion = process.env.PRIMARY_REGION || "eu-west-1";
-    const isPrimaryRegion = region === primaryRegion;
-
-    // Create the network stack with DR capabilities first
-    // This ensures the Route53 hosted zone is created before other stacks that need it
-    this.networkStack = new NetworkStack(this, "NetworkStack", {
-      ...props,
-      stackName: `${resourcePrefix}-network-stack`,
-      isPrimaryRegion: isPrimaryRegion,
-      domainName: `iot-${envName}.example.com`, // Customize as needed
-    });
 
     // Create stacks with proper dependencies and cross-references
     this.iotStack = new IoTStack(this, "IotStack", {
