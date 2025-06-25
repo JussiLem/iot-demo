@@ -1,4 +1,10 @@
-import { aws_codepipeline as cp, pipelines, SecretValue, Stack, StackProps } from "aws-cdk-lib";
+import {
+  aws_codepipeline as cp,
+  pipelines,
+  SecretValue,
+  Stack,
+  StackProps,
+} from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { IotPlatformStage } from "./iot-platform-stage";
 
@@ -35,6 +41,15 @@ export interface CICDPipelineStackProps extends StackProps {
    * @default ["dev"]
    */
   readonly deploymentEnvironments?: string[];
+
+  /**
+   * The account IDs for workload deployments, keyed by environment name
+   * This allows deploying workloads to different accounts than the pipeline account,
+   * following the AWS Landing Zone Accelerator OU structure:
+   * - Pipeline in Deployments OU
+   * - Workloads in Workloads OU
+   */
+  readonly workloadAccountIds?: Record<string, string>;
 }
 
 /**
@@ -47,6 +62,13 @@ export interface CICDPipelineStackProps extends StackProps {
  * Following Domain-Driven Design principles, this stack is responsible for the
  * deployment domain, while the actual IoT platform is encapsulated in the
  * IotPlatformStage.
+ *
+ * This stack follows the AWS Landing Zone Accelerator OU structure:
+ * - The pipeline itself is deployed to the Deployments OU (pipeline account)
+ * - The workloads are deployed to the Workloads OU (workload accounts)
+ *
+ * This separation of concerns improves security and governance by isolating
+ * CI/CD tooling from the actual workloads.
  */
 export class CICDPipelineStack extends Stack {
   constructor(scope: Construct, id: string, props: CICDPipelineStackProps) {
@@ -80,10 +102,15 @@ export class CICDPipelineStack extends Stack {
       deploymentRegions.forEach((region) => {
         const stageId = `${env}-${region.replace(/-/g, "")}`;
 
+        // Determine the account ID to use for this environment
+        // If workloadAccountIds is provided and has an entry for this environment, use it
+        // Otherwise, fall back to the pipeline account (this.account)
+        const accountId = props.workloadAccountIds?.[env] || this.account;
+
         wave.addStage(
           new IotPlatformStage(this, stageId, {
             env: {
-              account: this.account,
+              account: accountId, // Use the workload account ID for this environment
               region: region,
             },
             // Pass environment name as a context value

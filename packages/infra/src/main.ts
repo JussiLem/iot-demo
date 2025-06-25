@@ -5,14 +5,47 @@ import { AwsPrototypingChecks, PDKNag } from "@aws/pdk/pdk-nag";
 import { CICDPipelineStack } from "./stacks/cicd-pipeline-stack";
 import { HostedZoneStack } from "./stacks/hosted-zone-stack";
 
+/**
+ * Ensures that a value is defined (not undefined).
+ * If the value is undefined, returns the fallback value.
+ * This helper function is used to satisfy TypeScript's type checking.
+ *
+ * @param value The value to check
+ * @param fallback The fallback value to use if the value is undefined
+ * @returns The value if it's defined, otherwise the fallback
+ */
+const ensureDefined = <T>(value: T | undefined, fallback: T): T =>
+  value !== undefined ? value : fallback;
+
 /* eslint-disable @typescript-eslint/no-floating-promises */
 (async () => {
   const app = PDKNag.app({
     nagPacks: [new AwsPrototypingChecks()],
   });
 
-  // Define the AWS account ID for deployment
-  const accountId = process.env.CDK_DEFAULT_ACCOUNT;
+  // Define the AWS account IDs for deployment
+  // In AWS Landing Zone Accelerator, these would be in different OUs:
+  // - pipelineAccountId: Deployments OU (for CI/CD tooling)
+  // - workloadAccountIds: Workloads OU (for both prod and non-prod workloads)
+
+  // Get the default account ID to use as a fallback
+  const defaultAccount = ensureDefined(
+    process.env.CDK_DEFAULT_ACCOUNT,
+    "123456789012",
+  );
+
+  // Define the pipeline account ID with fallback to a default account
+  const pipelineAccountId = ensureDefined(
+    process.env.CDK_PIPELINE_ACCOUNT,
+    defaultAccount,
+  );
+
+  // Define workload account IDs with fallbacks to the default account
+  const workloadAccountIds: Record<string, string> = {
+    dev: ensureDefined(process.env.CDK_DEV_ACCOUNT, defaultAccount),
+    test: ensureDefined(process.env.CDK_TEST_ACCOUNT, defaultAccount),
+    prod: ensureDefined(process.env.CDK_PROD_ACCOUNT, defaultAccount),
+  };
 
   // Define the primary and DR regions for multi-region deployment
   const primaryRegion = "eu-west-1";
@@ -24,7 +57,11 @@ import { HostedZoneStack } from "./stacks/hosted-zone-stack";
   // Create the hosted zone stack first
   // This stack creates the Route53 hosted zone that will be used by the NetworkStack
   // It only needs to be deployed once, before the CICDPipelineStack
+  // Deploy to the workload accounts, not the pipeline account
   environments.forEach((env) => {
+    // Ensure we have a defined account ID for this environment
+    const accountId = ensureDefined(workloadAccountIds[env], defaultAccount);
+
     new HostedZoneStack(app, `${env}-hosted-zone-stack`, {
       env: {
         account: accountId,
@@ -36,15 +73,18 @@ import { HostedZoneStack } from "./stacks/hosted-zone-stack";
   });
 
   // Create the CI/CD pipeline stack
+  // Deploy to the pipeline account (Deployments OU), not the workload accounts
   new CICDPipelineStack(app, "iot-platform-cicd", {
     env: {
-      account: accountId,
+      account: pipelineAccountId,
       region: primaryRegion, // Pipeline is deployed in the primary region
     },
     // Configure multi-region deployment
     deploymentRegions: [primaryRegion, ...drRegions],
     // Configure multi-environment deployment
     deploymentEnvironments: environments,
+    // Pass the workload account IDs to the pipeline stack
+    workloadAccountIds: workloadAccountIds,
     // GitHub repository configuration
     repository: "JussiLem/iot-demo",
     branch: "main",
