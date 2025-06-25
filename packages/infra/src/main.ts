@@ -72,15 +72,15 @@ const ensureDefined = <T>(value: T | undefined, fallback: T): T =>
     });
   });
 
-  // Create the CI/CD pipeline stack
-  // Deploy to the pipeline account (Deployments OU), not the workload accounts
+  // Create the CI/CD pipeline stack in the primary region
+  // This pipeline only deploys to the primary region for active-active cost savings
   new CICDPipelineStack(app, "iot-platform-cicd", {
     env: {
       account: pipelineAccountId,
       region: primaryRegion, // Pipeline is deployed in the primary region
     },
-    // Configure multi-region deployment
-    deploymentRegions: [primaryRegion, ...drRegions],
+    // Configure to deploy only to the primary region
+    deploymentRegions: [primaryRegion],
     // Configure multi-environment deployment
     deploymentEnvironments: environments,
     // Pass the workload account IDs to the pipeline stack
@@ -89,6 +89,29 @@ const ensureDefined = <T>(value: T | undefined, fallback: T): T =>
     repository: "JussiLem/iot-demo",
     branch: "main",
     githubTokenSecretName: "GITHUB_TOKEN",
+  });
+
+  // Create DR pipeline stacks in each DR region
+  // These pipelines don't deploy resources until manually triggered
+  drRegions.forEach((drRegion) => {
+    new CICDPipelineStack(app, `iot-platform-dr-${drRegion}`, {
+      env: {
+        account: pipelineAccountId,
+        region: drRegion, // Pipeline is deployed in the DR region
+      },
+      // Configure to deploy only to this DR region
+      deploymentRegions: [drRegion],
+      // Configure multi-environment deployment
+      deploymentEnvironments: environments,
+      // Pass the workload account IDs to the pipeline stack
+      workloadAccountIds: workloadAccountIds,
+      // Set this as a DR pipeline to add manual approval steps
+      isDrPipeline: true,
+      // GitHub repository configuration
+      repository: "JussiLem/iot-demo",
+      branch: "main",
+      githubTokenSecretName: "GITHUB_TOKEN",
+    });
   });
 
   // Generate architecture diagrams using CDK Graph

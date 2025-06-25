@@ -50,6 +50,13 @@ export interface CICDPipelineStackProps extends StackProps {
    * - Workloads in Workloads OU
    */
   readonly workloadAccountIds?: Record<string, string>;
+
+  /**
+   * Whether this is a DR pipeline
+   * If true, a manual approval step will be added before deploying to each region
+   * @default false
+   */
+  readonly isDrPipeline?: boolean;
 }
 
 /**
@@ -107,20 +114,38 @@ export class CICDPipelineStack extends Stack {
         // Otherwise, fall back to the pipeline account (this.account)
         const accountId = props.workloadAccountIds?.[env] || this.account;
 
-        wave.addStage(
-          new IotPlatformStage(this, stageId, {
-            env: {
-              account: accountId, // Use the workload account ID for this environment
-              region: region,
+        // Create the IotPlatformStage
+        const stage = new IotPlatformStage(this, stageId, {
+          env: {
+            account: accountId, // Use the workload account ID for this environment
+            region: region,
+          },
+          // Pass environment name as a context value
+          // This can be used in the stage to configure environment-specific settings
+          tags: {
+            Environment: env,
+            Region: region,
+          },
+        });
+
+        // If this is a DR pipeline, add a manual approval step before deploying
+        if (props.isDrPipeline) {
+          // Add a manual approval step before deploying to the DR region
+          const manualApprovalStep = new pipelines.ManualApprovalStep(
+            `ApproveDeployment-${env}-${region}`,
+            {
+              comment: `Approve deployment to DR region ${region} for environment ${env}`,
             },
-            // Pass environment name as a context value
-            // This can be used in the stage to configure environment-specific settings
-            tags: {
-              Environment: env,
-              Region: region,
-            },
-          }),
-        );
+          );
+
+          // Add the stage with manual approval
+          wave.addStage(stage, {
+            pre: [manualApprovalStep],
+          });
+        } else {
+          // Add the stage without manual approval
+          wave.addStage(stage);
+        }
       });
     });
   }

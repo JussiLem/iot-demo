@@ -64,7 +64,7 @@ export class IotPlatformStage extends Stage {
   constructor(scope: Construct, id: string, props: IotPlatformStageProps) {
     super(scope, id, props);
 
-    // Get environment name from props or default to "dev"
+    // Get the environment name from props or default to "dev"
     const envName =
       props.environmentName || (props.tags && props.tags.Environment) || "dev";
 
