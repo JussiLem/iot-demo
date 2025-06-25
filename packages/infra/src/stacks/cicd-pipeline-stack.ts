@@ -1,4 +1,4 @@
-import { pipelines, SecretValue, Stack, StackProps } from "aws-cdk-lib";
+import { aws_codepipeline as cp, pipelines, SecretValue, Stack, StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { IotPlatformStage } from "./iot-platform-stage";
 
@@ -61,6 +61,7 @@ export class CICDPipelineStack extends Stack {
 
     // Create the pipeline
     const pipeline = new pipelines.CodePipeline(this, "Pipeline", {
+      pipelineType: cp.PipelineType.V2,
       synth: new pipelines.ShellStep("Synth", {
         input: pipelines.CodePipelineSource.gitHub(repository, branch, {
           authentication: SecretValue.secretsManager(githubTokenSecretName),

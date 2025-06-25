@@ -56,7 +56,7 @@ export class CostMonitoringStack extends Stack {
       this,
       "CostExplorerFunction",
       {
-        runtime: lambda.Runtime.NODEJS_18_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         entry: path.join(__dirname, "../lambda/cost-explorer/index.ts"),
         handler: "handler",
         timeout: Duration.minutes(5),

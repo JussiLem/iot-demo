@@ -127,9 +127,14 @@ export class IoTStack extends Stack {
 
     // Look up the hosted zone by domain name
     // This works consistently across all regions without needing to know if we're in the primary or secondary region
-    this.iotHostedZone = route53.HostedZone.fromLookup(this, "IoTHostedZone", {
-      domainName: domainName,
-    });
+    this.iotHostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      this,
+      "IoTHostedZone",
+      {
+        hostedZoneId: "hostedZoneId",
+        zoneName: domainName,
+      },
+    );
 
     // Create a custom domain configuration for IoT Core
     const customDomainConfig = new iot.CfnDomainConfiguration(

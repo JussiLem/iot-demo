@@ -61,7 +61,7 @@ export class DeviceTaggerConstruct extends Construct {
       this,
       "DeviceTaggerFunction",
       {
-        runtime: lambda.Runtime.NODEJS_18_X,
+        runtime: lambda.Runtime.NODEJS_22_X,
         handler: "handler",
         timeout: Duration.seconds(30),
         memorySize: 256,
