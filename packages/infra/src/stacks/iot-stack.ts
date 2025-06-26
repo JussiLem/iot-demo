@@ -19,6 +19,7 @@ import { DeviceTaggerConstruct } from "../constructs";
  * - An IoT Policy to allow devices to publish/subscribe to topics within their tenant-specific namespace.
  * - An IoT Rule to forward device data from MQTT topics to a specified Kinesis Data Stream for processing.
  * - Cost tracking for IoT devices with multi-tenant support.
+ * - IoT Core custom domain configuration with Route53 failover routing for disaster recovery.
  *
  * The stack enables scalable IoT data management by integrating with AWS IoT Core and provides
  * a foundation for robust IoT solutions and data analysis pipelines.
@@ -30,45 +31,63 @@ import { DeviceTaggerConstruct } from "../constructs";
  * @param {string} id - The logical ID of the stack.
  * @param {StackProps} [props] - Configuration and properties for the stack.
  */
+export interface IoTStackProps extends StackProps {
+  /**
+   * The domain name for the IoT Core custom endpoint
+   * @default "iot-{envName}.example.com"
+   */
+  readonly domainName?: string;
+
+  /**
+   * Whether this stack is deployed in the primary region
+   * @default false
+   */
+  readonly isPrimaryRegion?: boolean;
+}
+
 export class IoTStack extends Stack {
   /**
    * The custom IoT Core endpoint domain name
    */
   public readonly iotCustomEndpointDomainName: string;
 
-  /**
-   * The Route53 hosted zone for IoT Core endpoints
-   */
-  public readonly iotHostedZone: route53.IHostedZone;
-
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props?: IoTStackProps) {
     super(scope, id, props);
 
-    // Extract environment name and region from stack name
-    const stackNameParts = this.stackName.split("-");
-    const envName = stackNameParts.length > 0 ? stackNameParts[0] : "dev";
-    const region = this.region;
+    // Extract the environment name and region from the stack name
+    const getStackInfo = (stackName: string) => {
+      const parts = stackName.split("-");
+      return {
+        envName: parts.length > 0 ? parts[0] : "dev",
+        region: this.region,
+      } as const;
+    };
+
+    const { envName, region } = getStackInfo(this.stackName);
 
     // Determine if this is the primary region (for failover configuration)
     const isPrimaryRegion =
+      props?.isPrimaryRegion ??
       region === (process.env.PRIMARY_REGION || "eu-west-1");
+
+    // IoT Policy allowing devices to publish/subscribe to their own topics
+    const devicePolicyDocument = {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: ["iot:Publish", "iot:Subscribe", "iot:Connect"] as const,
+          Resource: [
+            `arn:aws:iot:${region}:${this.account}:topic/tenant/\${iot:ClientId}/*`,
+          ] as const,
+        },
+      ] as const,
+    } as const;
+
     // IoT Policy allowing devices to publish/subscribe to their own topics
     new iot.CfnPolicy(this, "DevicePolicy", {
       policyName: "IoTDevicePolicy",
-      policyDocument: {
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Effect: "Allow",
-            Action: ["iot:Publish", "iot:Subscribe", "iot:Connect"],
-            Resource: [
-              // Allow pub/sub to topics under the device's own namespace
-              // ${iot:Connection.Thing.ThingName} is a policy variable for the Thing name
-              `arn:aws:iot:${this.region}:${this.account}:topic/tenant/\${iot:ClientId}/*`,
-            ],
-          },
-        ],
-      },
+      policyDocument: devicePolicyDocument,
     });
 
     // Create the device tagger construct
@@ -112,8 +131,6 @@ export class IoTStack extends Stack {
               streamName: streamNameParam.stringValue, // Use the stream name from parameter store
             },
           },
-          // Removed Lambda action to prevent excessive invocations
-          // Now using EventBridge rule to trigger the function only on device registry changes
         ],
       },
     });
@@ -122,19 +139,14 @@ export class IoTStack extends Stack {
 
     // (Optional) IoT provisioning resources (certificates, thing types, etc.) could be defined here or handled out-of-band.
 
-    // Create a domain name for IoT Core custom endpoint
-    const domainName = `iot-${envName}.example.com`;
+    // Get domain name from props or use default
+    const domainName = props?.domainName || `iot-${envName}.example.com`;
 
     // Look up the hosted zone by domain name
     // This works consistently across all regions without needing to know if we're in the primary or secondary region
-    this.iotHostedZone = route53.HostedZone.fromHostedZoneAttributes(
-      this,
-      "IoTHostedZone",
-      {
-        hostedZoneId: "hostedZoneId",
-        zoneName: domainName,
-      },
-    );
+    const hostedZone = route53.HostedZone.fromLookup(this, "IoTHostedZone", {
+      domainName: domainName,
+    });
 
     // Create a custom domain configuration for IoT Core
     const customDomainConfig = new iot.CfnDomainConfiguration(
@@ -182,12 +194,12 @@ export class IoTStack extends Stack {
       type: "A",
       aliasTarget: {
         dnsName: this.iotCustomEndpointDomainName,
-        hostedZoneId: this.iotHostedZone.hostedZoneId,
+        hostedZoneId: hostedZone.hostedZoneId,
         evaluateTargetHealth: true,
       },
       failover: isPrimaryRegion ? "PRIMARY" : "SECONDARY",
       healthCheckId: healthCheck.healthCheckId,
-      hostedZoneId: this.iotHostedZone.hostedZoneId,
+      hostedZoneId: hostedZone.hostedZoneId,
       setIdentifier: `${envName}-${region}-endpoint`,
     });
 

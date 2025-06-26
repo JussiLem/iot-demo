@@ -6,7 +6,11 @@ import {
   StackProps,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { CrossCuttingStage } from "./cross-cutting-stage";
+import { DataIdentityStage } from "./data-identity-stage";
+import { InsightsStage } from "./insights-stage";
 import { IotPlatformStage } from "./iot-platform-stage";
+import { StoreStage } from "./store-stage";
 
 /**
  * Properties for the CICDPipelineStack
@@ -101,11 +105,12 @@ export class CICDPipelineStack extends Stack {
       crossAccountKeys: true,
     });
 
-    // Create waves for each environment
+    // Organize deployments by environment and phase
     deploymentEnvironments.forEach((env) => {
-      const wave = pipeline.addWave(`${env}-wave`);
+      // For each environment (e.g., dev, prod), create multiple waves for different phases
+      // This allows for better organization and control of the deployment process
 
-      // Add stages for each region within the environment wave
+      // Process each region within this environment
       deploymentRegions.forEach((region) => {
         const stageId = `${env}-${region.replace(/-/g, "")}`;
 
@@ -114,37 +119,145 @@ export class CICDPipelineStack extends Stack {
         // Otherwise, fall back to the pipeline account (this.account)
         const accountId = props.workloadAccountIds?.[env] || this.account;
 
-        // Create the IotPlatformStage
-        const stage = new IotPlatformStage(this, stageId, {
-          env: {
-            account: accountId, // Use the workload account ID for this environment
-            region: region,
-          },
-          // Pass environment name as a context value
-          // This can be used in the stage to configure environment-specific settings
-          tags: {
-            Environment: env,
-            Region: region,
-          },
+        // Common stage configuration for all stages in this environment and region
+        const stageEnv = {
+          account: accountId,
+          region: region,
+        };
+
+        const stageTags = {
+          Environment: env,
+          Region: region,
+        };
+
+        // Create all the stages that will be used in the waves
+        // ===================================================
+
+        // Create the IotPlatformStage for core IoT platform components (Ingest phase)
+        const iotStage = new IotPlatformStage(this, stageId, {
+          env: stageEnv,
+          tags: stageTags,
+          primaryRegion: process.env.PRIMARY_REGION ?? "eu-west-1",
         });
 
-        // If this is a DR pipeline, add a manual approval step before deploying
+        // Create the StoreStage for data lake architecture (Store phase)
+        const storeStage = new StoreStage(this, `${stageId}-store`, {
+          env: stageEnv,
+          tags: stageTags,
+          inputStreamName: iotStage.streamingStack.iotDataStream.streamName,
+        });
+
+        // Create the InsightsStage for analytics and visualization (Insights phase)
+        const insightsStage = new InsightsStage(this, `${stageId}-insights`, {
+          env: stageEnv,
+          tags: stageTags,
+          databaseName: storeStage.dataLakeStack.iotDataDatabase.ref,
+        });
+
+        // Create the CrossCuttingStage for monitoring, security, and logging (Cross-cutting concerns)
+        const crossCuttingStage = new CrossCuttingStage(
+          this,
+          `${stageId}-cross-cutting`,
+          {
+            env: stageEnv,
+            tags: stageTags,
+          },
+        );
+
+        // Create the DataIdentityStage for data analytics and identity components
+        const dataIdentityStage = new DataIdentityStage(
+          this,
+          `${stageId}-data-identity`,
+          {
+            env: stageEnv,
+            tags: stageTags,
+          },
+        );
+
+        // For DR pipelines, add a single manual approval step before deploying anything
+        let drApprovalStep: pipelines.ManualApprovalStep | undefined;
         if (props.isDrPipeline) {
-          // Add a manual approval step before deploying to the DR region
-          const manualApprovalStep = new pipelines.ManualApprovalStep(
+          drApprovalStep = new pipelines.ManualApprovalStep(
             `ApproveDeployment-${env}-${region}`,
             {
               comment: `Approve deployment to DR region ${region} for environment ${env}`,
             },
           );
+        }
 
-          // Add the stage with manual approval
-          wave.addStage(stage, {
-            pre: [manualApprovalStep],
+        // Create waves for different phases of the deployment
+        // ==================================================
+
+        // WAVE 1: Core Infrastructure (Ingest & Transform)
+        // This wave deploys the core IoT platform components that are essential for data ingestion and transformation
+        const coreWave = pipeline.addWave(`${env}-${region}-core-wave`);
+
+        if (drApprovalStep) {
+          // For DR pipelines, add the approval step before deploying
+          coreWave.addStage(iotStage, { pre: [drApprovalStep] });
+        } else {
+          // For normal pipelines, deploy without approval
+          coreWave.addStage(iotStage);
+        }
+
+        // WAVE 2: Data Storage
+        // This wave deploys the data lake architecture for storing IoT data
+        const storageWave = pipeline.addWave(`${env}-${region}-storage-wave`);
+
+        if (drApprovalStep) {
+          storageWave.addStage(storeStage, { pre: [drApprovalStep] });
+        } else {
+          storageWave.addStage(storeStage);
+        }
+
+        // WAVE 3: Analytics & Insights
+        // This wave deploys the analytics and visualization components
+        const insightsWave = pipeline.addWave(`${env}-${region}-insights-wave`);
+
+        if (drApprovalStep) {
+          insightsWave.addStage(insightsStage, { pre: [drApprovalStep] });
+        } else {
+          insightsWave.addStage(insightsStage);
+        }
+
+        // WAVE 4: Cross-Cutting Concerns
+        // This wave deploys monitoring, security, and logging components
+        const crossCuttingWave = pipeline.addWave(
+          `${env}-${region}-cross-cutting-wave`,
+        );
+
+        if (drApprovalStep) {
+          crossCuttingWave.addStage(crossCuttingStage, {
+            pre: [drApprovalStep],
           });
         } else {
-          // Add the stage without manual approval
-          wave.addStage(stage);
+          crossCuttingWave.addStage(crossCuttingStage);
+        }
+
+        // WAVE 5: Data & Identity (always requires approval)
+        // This wave deploys data analytics and identity components, which always require manual approval
+        const dataIdentityWave = pipeline.addWave(
+          `${env}-${region}-data-identity-wave`,
+        );
+
+        // Create a manual approval step for data identity components
+        // This is required even for non-DR pipelines as these components are more sensitive
+        const dataIdentityApprovalStep = new pipelines.ManualApprovalStep(
+          `ApproveDataIdentityDeployment-${env}-${region}`,
+          {
+            comment: `Approve deployment of Data Analytics and Identity components to ${region} for environment ${env}`,
+          },
+        );
+
+        // For DR pipelines, we need both the DR approval and the data identity approval
+        if (drApprovalStep) {
+          dataIdentityWave.addStage(dataIdentityStage, {
+            pre: [drApprovalStep, dataIdentityApprovalStep],
+          });
+        } else {
+          dataIdentityWave.addStage(dataIdentityStage, {
+            pre: [dataIdentityApprovalStep],
+          });
         }
       });
     });
